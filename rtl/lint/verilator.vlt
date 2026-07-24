@@ -7,6 +7,10 @@ lint_off -rule PINCONNECTEMPTY -file "*rtl/logical/tdrv32_top.sv" -match "Instan
 lint_off -rule UNUSEDSIGNAL -file "*rtl/logical/tdrv32_top.sv" -match "Signal is not used: 'dmem_read'*"
 lint_off -rule UNUSEDSIGNAL -file "*rtl/logical/tdrv32_top.sv" -match "Signal is not used: 'dmem_wstrb'*"
 
+// The ASIC boundary deliberately omits verification-only observability ports.
+lint_off -rule PINCONNECTEMPTY -file "*rtl/logical/tdrv32_asic_wrapper.sv" -match "Instance pin connected by name with empty reference: 'o_commit_*'*"
+lint_off -rule PINCONNECTEMPTY -file "*rtl/logical/tdrv32_asic_wrapper.sv" -match "Instance pin connected by name with empty reference: 'o_debug_*'*"
+
 // The decoded instruction remains a standard 32-bit payload through EX. rd is
 // carried separately, so those five encoding bits are intentionally unused.
 lint_off -rule UNUSEDSIGNAL -file "*rtl/logical/pipeline/tdrv32_pipeline.sv" -match "Bits of signal are not used: 'ex_instruction'[11:7]*"

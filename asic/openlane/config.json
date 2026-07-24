@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "version": 2,
+    "flow": "Classic"
+  },
+  "DESIGN_NAME": "tdrv32_asic_wrapper",
+  "VERILOG_FILES": [
+    "dir::../../rtl/logical/common/adder_n_bit.sv",
+    "dir::../../rtl/logical/common/core_sleep_gate.sv",
+    "dir::../../rtl/logical/common/mux2to1.sv",
+    "dir::../../rtl/logical/common/mux3to1.sv",
+    "dir::../../rtl/logical/common/mux4to1.sv",
+    "dir::../../rtl/logical/stages/fetch/program_counter.sv",
+    "dir::../../rtl/logical/stages/fetch/instruction_memory.sv",
+    "dir::../../rtl/logical/stages/fetch/rv32c_fetch_buffer.sv",
+    "dir::../../rtl/logical/stages/decode/control_unit.sv",
+    "dir::../../rtl/logical/stages/decode/immediate_generator.sv",
+    "dir::../../rtl/logical/stages/decode/register_file.sv",
+    "dir::../../rtl/logical/stages/decode/rv32c_decompressor.sv",
+    "dir::../../rtl/logical/stages/execute/alu_unit.sv",
+    "dir::../../rtl/logical/stages/execute/iterative_multiplier.sv",
+    "dir::../../rtl/logical/stages/execute/iterative_divider.sv",
+    "dir::../../rtl/logical/stages/execute/mdu_unit.sv",
+    "dir::../../rtl/logical/stages/execute/branch_unit.sv",
+    "dir::../../rtl/logical/stages/execute/jump_unit.sv",
+    "dir::../../rtl/logical/stages/memory/load_store_unit.sv",
+    "dir::../../rtl/logical/stages/memory/data_memory.sv",
+    "dir::../../rtl/logical/stages/system/csr_file.sv",
+    "dir::../../rtl/logical/pipeline/if_id_register.sv",
+    "dir::../../rtl/logical/pipeline/id_ex_register.sv",
+    "dir::../../rtl/logical/pipeline/ex_mem_register.sv",
+    "dir::../../rtl/logical/pipeline/mem_wb_register.sv",
+    "dir::../../rtl/logical/pipeline/tdrv32_rvfi_shadow.sv",
+    "dir::../../rtl/logical/pipeline/tdrv32_pipeline.sv",
+    "dir::../../rtl/logical/hazard/forwarding_unit.sv",
+    "dir::../../rtl/logical/hazard/hazard_detection_unit.sv",
+    "dir::../../rtl/logical/bus/native_to_ahb_lite.sv",
+    "dir::../../rtl/logical/tdrv32_core.sv",
+    "dir::../../rtl/logical/tdrv32_top.sv",
+    "dir::../../rtl/logical/tdrv32_asic_wrapper.sv"
+  ],
+  "CLOCK_PORT": "i_clk",
+  "CLOCK_PERIOD": 25,
+  "PNR_SDC_FILE": "dir::tdrv32_core.sdc",
+  "SIGNOFF_SDC_FILE": "dir::tdrv32_core.sdc",
+  "FP_SIZING": "relative",
+  "FP_ASPECT_RATIO": 1,
+  "FP_CORE_UTIL": 20,
+  "PL_TARGET_DENSITY_PCT": 30,
+  "pdk::sky130A": {
+    "scl::sky130_fd_sc_hd": {
+      "CLOCK_PERIOD": 25
+    }
+  }
+}

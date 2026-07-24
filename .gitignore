@@ -73,6 +73,7 @@ fpga/**/timing/
 
 # Generic build outputs
 build/
+asic/openlane/runs/
 moduleparamid
 *.log
 *.tmp

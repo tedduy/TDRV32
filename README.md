@@ -140,6 +140,16 @@ make mount-openlane
 The repository is mounted at `/workspace`; PDK data persists in the
 `tdrv32-openlane-pdk` Docker volume.
 
+Run the baseline `sky130A` RTL-to-GDSII flow directly from the host with:
+
+```bash
+make openlane
+```
+
+The baseline hardens the minimal `tdrv32_asic_wrapper` boundary with the
+`sky130_fd_sc_hd` library at a 25 ns clock period and 20% initial core
+utilization. Results are written below `asic/openlane/runs/`.
+
 ## Repository Structure
 
 ```text

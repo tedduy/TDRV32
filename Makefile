@@ -31,6 +31,7 @@ help:
 	@echo "  make mount               Enter the Docker development environment"
 	@echo "  make mount-act4          Enter the official ACT4 environment"
 	@echo "  make mount-openlane      Enter the OpenLane 2 ASIC environment"
+	@echo "  make openlane            Run the sky130 RTL-to-GDSII flow"
 	@echo "  make test                Run Cocotb on Verilator"
 	@echo "  make ci                  Run the complete RTL quality gate"
 	@echo

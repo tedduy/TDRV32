@@ -55,30 +55,16 @@ module register_file #(
         end
     endgenerate
 
-    // Active-low latch storage.  WB address, data, and enable are launched by
-    // rising-edge pipeline registers, remain stable through the cycle, and
-    // are captured while the clock is low.  The latch closes at the following
-    // rising edge, preserving the architectural write timing of a posedge
-    // register file while allowing an ASIC library to map the 1024 data bits
-    // to smaller latch cells.  The storage deliberately has no reset; valid_q
-    // provides the reset-visible architectural state.
-    // Use the portable latch template instead of always_latch. Yosys expands a
-    // variable-indexed array write into address/data helper signals, which
-    // makes its strict always_latch check reject this otherwise valid storage.
-    /* verilator lint_off LATCH */
-    /* verilator lint_off COMBDLY */
-    always @(*) begin
-        if (!i_clk && i_write_enable && (i_rd_addr != '0))
-            storage[i_rd_addr] <= i_rd_data;
-    end
-    /* verilator lint_on COMBDLY */
-    /* verilator lint_on LATCH */
-
+    // Edge-triggered storage keeps the register file on the primary clock
+    // tree. The data array deliberately has no reset; valid_q supplies the
+    // architectural reset view until each register is written.
     always_ff @(posedge i_clk or negedge i_arst_n) begin
-        if (!i_arst_n)
+        if (!i_arst_n) begin
             valid_q <= '0;
-        else if (i_write_enable && (i_rd_addr != '0))
+        end else if (i_write_enable && (i_rd_addr != '0)) begin
+            storage[i_rd_addr] <= i_rd_data;
             valid_q[i_rd_addr] <= 1'b1;
+        end
     end
 
     // Asynchronous reads with same-cycle WB-to-ID bypass. Without this

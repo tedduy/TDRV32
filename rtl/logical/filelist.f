@@ -48,3 +48,4 @@ rtl/logical/hazard/hazard_detection_unit.sv
 rtl/logical/bus/native_to_ahb_lite.sv
 rtl/logical/tdrv32_core.sv
 rtl/logical/tdrv32_top.sv
+rtl/logical/tdrv32_asic_wrapper.sv

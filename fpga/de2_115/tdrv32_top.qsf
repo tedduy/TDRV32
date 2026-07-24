@@ -83,6 +83,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/logical/hazard/forwardi
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/logical/hazard/hazard_detection_unit.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/logical/bus/native_to_ahb_lite.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/logical/tdrv32_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/logical/tdrv32_asic_wrapper.sv
 set_global_assignment -name SYSTEMVERILOG_FILE de2_115_top.sv
 set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
