@@ -22,6 +22,7 @@ module rv32c_fetch_buffer #(
     output logic [31:0]  o_instruction,
     output logic [31:0]  o_raw_instruction,
     output logic         o_compressed,
+    output logic         o_pc_increment_2,
     output logic         o_access_fault
 );
 
@@ -36,6 +37,7 @@ module rv32c_fetch_buffer #(
     logic [31:0] decompressed_instruction;
     logic        decompressed_illegal;
     logic        starts_cross_word;
+    (* keep = "true" *) logic pc_increment_2_fast;
 
     assign o_request_valid = !response_held_q;
     assign o_bus_addr = cross_pending_q
@@ -48,6 +50,17 @@ module rv32c_fetch_buffer #(
                                         : active_response[15:0];
     assign starts_cross_word = !cross_pending_q && i_pc[1] &&
                                (i_response_data[17:16] == 2'b11);
+
+    // Keep the sequential-PC decision independent of the decompressor and
+    // instruction-output mux. Only a successfully completed compressed
+    // instruction advances the PC by two bytes.
+    assign pc_increment_2_fast = response_held_q
+                               ? (!held_error_q && !held_cross_q &&
+                                  (compressed_parcel[1:0] != 2'b11))
+                               : (i_response_valid && !i_response_error &&
+                                  !cross_pending_q && !starts_cross_word &&
+                                  (compressed_parcel[1:0] != 2'b11));
+    assign o_pc_increment_2 = pc_increment_2_fast;
 
     rv32c_decompressor u_decompressor (
         .i_instruction(compressed_parcel),
@@ -143,7 +156,11 @@ module rv32c_fetch_buffer #(
     // Keep it off the asynchronous reset tree so synthesis can use smaller
     // non-resettable flops.
     always_ff @(posedge i_clk) begin
-        if (!i_flush && !response_held_q && i_response_valid) begin
+        // A flush invalidates every control bit that can expose this payload.
+        // Capturing an arriving stale response on the same edge is therefore
+        // harmless and keeps the global redirect/stall network off the data
+        // register clock-enable path.
+        if (!response_held_q && i_response_valid) begin
             if (!i_response_error && starts_cross_word)
                 first_half_q <= i_response_data[31:16];
             else if (!i_consume)

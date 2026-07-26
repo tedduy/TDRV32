@@ -1,4 +1,4 @@
-create_clock -name core_clk -period 25.0 [get_ports i_clk]
+create_clock -name core_clk -period 30.0 [get_ports i_clk]
 set core_clock [get_clocks core_clk]
 
 set_clock_uncertainty -setup 1.25 $core_clock

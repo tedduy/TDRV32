@@ -118,7 +118,8 @@ module tdrv32_pipeline #(
     // ==========================================================================
     logic [N-1:0] if_pc_current, if_pc_next, if_pc_sequential;
     logic [N-1:0] if_instruction, if_raw_instruction;
-    logic         if_complete, if_compressed, if_access_fault, if_consume;
+    logic         if_complete, if_compressed, if_pc_increment_2;
+    logic         if_access_fault, if_consume;
     logic         if_request_valid;
     
     // ==========================================================================
@@ -217,12 +218,10 @@ module tdrv32_pipeline #(
     logic         mem_valid;
     logic [N-1:0] mem_pc, mem_instruction;
     logic [N-1:0] mem_alu_result, mem_rs2_data;
-    logic [N-1:0] mem_return_addr;
     logic [N-1:0] mem_immediate;
     logic [4:0]   mem_rd_addr;
     logic         mem_branch_taken;
     logic         mem_reg_write, mem_mem_read, mem_mem_write;
-    logic [1:0]   mem_wb_sel;
     logic [2:0]   mem_mem_type;
     logic         mem_jal, mem_jalr;
     // ==========================================================================
@@ -258,6 +257,8 @@ module tdrv32_pipeline #(
     logic csr_order_stall;
     logic pipeline_flush_id_ex, pipeline_flush_if_id;
     logic imem_wait, dmem_wait, bus_stall, pipeline_stall, pipeline_advance;
+    logic mem_wb_fire, mem_wb_consumed_q;
+    logic mem_stage_complete, mem_access_error;
     logic pc_hold;
     logic dmem_request, dmem_complete, dmem_error_pending;
     logic [N-1:0] dmem_rdata_latched, dmem_response_rdata;
@@ -327,7 +328,7 @@ module tdrv32_pipeline #(
     assign o_debug_alu_result          = wb_alu_result;
     assign o_debug_wb_data             = wb_data;
     assign o_debug_rd_addr             = wb_rd_addr;
-    assign o_debug_rd_write            = wb_valid && wb_reg_write && pipeline_advance;
+    assign o_debug_rd_write            = wb_valid && wb_reg_write;
     assign o_debug_mem_write           = mem_mem_write;
     assign o_debug_mem_read            = mem_mem_read;
     assign o_debug_branch_taken        = wb_branch_taken;
@@ -366,10 +367,9 @@ module tdrv32_pipeline #(
     assign o_debug_immediate    = wb_immediate;
     assign o_debug_alu_uses_immediate       = ex_alu_src;
 
-    // A commit pulse represents one architecturally completed instruction.
-    // Gate it during a global pipeline stall so a held WB payload cannot retire
-    // more than once.
-    assign o_commit_valid       = wb_valid && pipeline_advance;
+    // WB is an always-ready sink. Once a packet reaches this elastic boundary,
+    // younger instruction/data bus backpressure cannot delay its retirement.
+    assign o_commit_valid       = wb_valid;
     assign o_commit_pc          = wb_pc;
     assign o_commit_instruction = wb_instruction;
     assign o_commit_rd_write    = o_commit_valid && wb_reg_write && (wb_rd_addr != 5'd0);
@@ -385,6 +385,8 @@ module tdrv32_pipeline #(
         .i_clk(i_clk),
         .i_arst_n(i_arst_n),
         .i_pipeline_stall(pipeline_stall),
+        .i_mem_wb_advance(1'b1),
+        .i_mem_wb_fire(mem_wb_fire),
         .i_trap_enter(trap_enter),
         .i_ex_sync_trap(ex_sync_trap),
         .i_data_access_exception(data_access_exception),
@@ -452,8 +454,8 @@ module tdrv32_pipeline #(
     // ==========================================================================
     
     assign if_pc_sequential = if_pc_current +
-                              (if_compressed ? {{(N-2){1'b0}}, 2'd2}
-                                               : {{(N-3){1'b0}}, 3'd4});
+                              (if_pc_increment_2 ? {{(N-2){1'b0}}, 2'd2}
+                                                 : {{(N-3){1'b0}}, 3'd4});
     
     // PC next selection (from EX stage for branches/jumps)
     logic [31:0] branch_or_plus4;
@@ -505,6 +507,7 @@ module tdrv32_pipeline #(
         .o_instruction(if_instruction),
         .o_raw_instruction(if_raw_instruction),
         .o_compressed(if_compressed),
+        .o_pc_increment_2(if_pc_increment_2),
         .o_access_fault(if_access_fault)
     );
 
@@ -603,7 +606,7 @@ module tdrv32_pipeline #(
     ) u_id_regfile (
         .i_clk(i_clk),
         .i_arst_n(i_arst_n),
-        .i_write_enable(wb_valid && wb_reg_write && pipeline_advance),
+        .i_write_enable(wb_valid && wb_reg_write),
         .i_rs1_addr(id_rs1_addr),
         .i_rs2_addr(id_rs2_addr),
         .i_rd_addr(wb_rd_addr),
@@ -669,6 +672,9 @@ module tdrv32_pipeline #(
         .i_arst_n(i_arst_n),
         .i_stall(pipeline_stall),
         .i_flush(pipeline_flush_id_ex),
+        .i_wb_write(o_commit_rd_write),
+        .i_wb_addr(wb_rd_addr),
+        .i_wb_data(wb_data),
         .i_valid(id_valid),
         .i_access_fault(id_instruction_access_fault),
         .i_pc(id_pc),
@@ -756,31 +762,17 @@ module tdrv32_pipeline #(
         // mandatory load-use bubble.  Do not feed the combinational DMEM
         // response into EX/MEM forwarding; besides being unnecessary, that
         // creates a bus-response -> forwarding -> ALU critical path.
-        .i_mem_reg_write(mem_valid && mem_reg_write && (mem_wb_sel != 2'b01)),
+        .i_mem_reg_write(mem_valid && mem_reg_write && !mem_mem_read),
         .i_wb_rd_addr(wb_rd_addr),
         .i_wb_reg_write(wb_valid && wb_reg_write),
         .o_forward_a(forward_a),
         .o_forward_b(forward_b)
     );
 
-    // EX/MEM forwarding must use the value that the instruction will
-    // architecturally write, not always the ALU output.  This matters for LUI
-    // (immediate) and JAL/JALR (PC+4).  Loads are deliberately excluded from
-    // EX/MEM forwarding and use the registered WB result after their bubble.
-    always_comb begin
-        unique case (mem_wb_sel)
-            2'b00:   mem_forward_data = mem_alu_result;
-            // The value is unobserved for loads.  Selecting the ALU result
-            // keeps combinational DMEM read data out of the EX datapath.
-            2'b01:   mem_forward_data = mem_alu_result;
-            2'b10:   mem_forward_data = mem_return_addr;
-            2'b11:   mem_forward_data = mem_immediate;
-            // Every value of the two-bit selector is enumerated.
-            /* verilator coverage_off */
-            default: mem_forward_data = mem_alu_result;
-            /* verilator coverage_on */
-        endcase
-    end
+    // EX normalizes every non-load writeback source before the EX/MEM
+    // boundary. Forwarding therefore has one registered source and no longer
+    // places the MEM writeback selector on the branch/redirect critical path.
+    assign mem_forward_data = mem_alu_result;
     
     // Forward rs1_data
     mux3to1 #(.N(N)) u_ex_forward_a_mux (
@@ -897,10 +889,26 @@ module tdrv32_pipeline #(
         .i_b(ex_immediate),
         .o_sum(ex_data_addr)
     );
-    assign ex_result = ex_mdu_active ? ex_mdu_result :
-                       ex_csr_en ? ex_csr_rdata :
-                       (ex_mem_read || ex_mem_write) ? ex_data_addr :
-                                                      ex_alu_result;
+    always_comb begin
+        if (ex_mdu_active)
+            ex_result = ex_mdu_result;
+        else if (ex_csr_en)
+            ex_result = ex_csr_rdata;
+        else begin
+            unique case (ex_wb_sel)
+                2'b10:   ex_result = ex_return_addr;
+                2'b11:   ex_result = ex_immediate;
+                2'b00:   ex_result = (ex_mem_read || ex_mem_write)
+                                      ? ex_data_addr : ex_alu_result;
+                // Loads carry their address through EX/MEM. Their memory data
+                // replaces it immediately before the MEM/WB register.
+                2'b01:   ex_result = ex_data_addr;
+                /* verilator coverage_off */
+                default: ex_result = ex_alu_result;
+                /* verilator coverage_on */
+            endcase
+        end
+    end
 
     assign control_transfer_target = ex_branch_taken ? ex_pc_branch_target
                                                       : ex_jump_target;
@@ -1051,12 +1059,14 @@ module tdrv32_pipeline #(
         .i_arst_n(i_arst_n),
         .i_stall(pipeline_stall),
         .i_flush(trap_enter),
+        .i_wb_write(o_commit_rd_write),
+        .i_wb_addr(wb_rd_addr),
+        .i_wb_data(wb_data),
         .i_valid(ex_valid),
         .i_pc(ex_pc),
         .i_instruction(ex_raw_instruction),
         .i_alu_result(ex_result),
         .i_rs2_data(ex_rs2_data_forwarded),
-        .i_return_addr(ex_return_addr),
         .i_immediate(ex_immediate),
         .i_rs2_addr(ex_rs2_addr),
         .i_rd_addr(ex_rd_addr),
@@ -1064,7 +1074,6 @@ module tdrv32_pipeline #(
         .i_reg_write(ex_reg_write),
         .i_mem_read(ex_mem_read),
         .i_mem_write(ex_mem_write),
-        .i_wb_sel(ex_wb_sel),
         .i_mem_type(ex_mem_type),
         
         // Carry control-flow information into MEM.
@@ -1078,7 +1087,6 @@ module tdrv32_pipeline #(
         .o_instruction(mem_instruction),
         .o_alu_result(mem_alu_result),
         .o_rs2_data(mem_rs2_data),
-        .o_return_addr(mem_return_addr),
         .o_immediate(mem_immediate),
         .o_rs2_addr(mem_rs2_addr),
         .o_rd_addr(mem_rd_addr),
@@ -1086,7 +1094,6 @@ module tdrv32_pipeline #(
         .o_reg_write(mem_reg_write),
         .o_mem_read(mem_mem_read),
         .o_mem_write(mem_mem_write),
-        .o_wb_sel(mem_wb_sel),
         .o_mem_type(mem_mem_type)
     );
     
@@ -1110,27 +1117,45 @@ module tdrv32_pipeline #(
         .o_byte_enable(mem_byte_enable)
     );
 
-    // Select the architectural result before the MEM/WB boundary. Forwarding
-    // in the following cycle then starts directly from a registered value
-    // instead of traversing a WB mux on the way back to EX.
-    mux4to1 #(.N(N)) u_mem_wb_data_mux (
-        .i_d0(mem_alu_result),
-        .i_d1(mem_load_data),
-        .i_d2(mem_return_addr),
-        .i_d3(mem_immediate),
-        .i_sel(mem_wb_sel),
-        .o_y(mem_wb_data)
-    );
+    // Every non-load result was normalized in EX. MEM only substitutes the
+    // returned load data, reducing this boundary to a single 2:1 mux.
+    assign mem_wb_data = mem_mem_read ? mem_load_data : mem_alu_result;
     
     // ==========================================================================
     // MEM/WB Pipeline Register
     // ==========================================================================
+
+    // MEM/WB is an elastic boundary with an always-ready WB consumer. A
+    // non-memory packet completes immediately; a memory packet completes only
+    // after its response handshake (or from the one-entry response latch).
+    // When an unrelated upstream stall keeps EX/MEM in place after transfer,
+    // remember that the packet was consumed and inject bubbles until EX/MEM
+    // advances. This guarantees exactly-once retirement without placing global
+    // bus backpressure on the MEM/WB payload clock enable.
+    assign mem_stage_complete = !dmem_request || dmem_complete ||
+                                (o_dmem_valid && i_dmem_ready);
+    assign mem_access_error = dmem_error_pending ||
+                              (o_dmem_valid && i_dmem_ready &&
+                               (i_dmem_error === 1'b1));
+
+    always_ff @(posedge i_clk or negedge i_arst_n) begin
+        if (!i_arst_n)
+            mem_wb_consumed_q <= 1'b0;
+        else if (pipeline_advance)
+            mem_wb_consumed_q <= 1'b0;
+        else if (mem_wb_fire)
+            mem_wb_consumed_q <= 1'b1;
+    end
+
+    assign mem_wb_fire = mem_valid && mem_stage_complete &&
+                         !mem_access_error && !data_access_exception &&
+                         !mem_wb_consumed_q;
     
     mem_wb_register #(.N(N)) u_mem_wb_reg (
         .i_clk(i_clk),
         .i_arst_n(i_arst_n),
-        .i_stall(pipeline_stall),
-        .i_valid(mem_valid && !data_access_exception),
+        .i_stall(1'b0),
+        .i_valid(mem_wb_fire),
         .i_pc(mem_pc),
         .i_instruction(mem_instruction),
         .i_alu_result(mem_alu_result),

@@ -138,6 +138,11 @@ module iterative_divider #(
 
       DIV_RUN: begin
         if (final_iteration) begin
+          // The completed result is captured below; the original operands are
+          // dead in DIV_DONE. Clear them independently of i_consume so
+          // downstream backpressure cannot enter their wide feedback muxes.
+          dividend_q <= '0;
+          divisor_q  <= '0;
           if (!special_q) begin
             quotient_q  <= quotient_corrected;
             remainder_q <= remainder_corrected;

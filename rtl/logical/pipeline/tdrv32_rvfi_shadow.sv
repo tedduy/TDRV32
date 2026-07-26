@@ -12,6 +12,8 @@ module tdrv32_rvfi_shadow #(
 
     // Pipeline global control
     input  logic         i_pipeline_stall,
+    input  logic         i_mem_wb_advance,
+    input  logic         i_mem_wb_fire,
 
     // Trap / exception events from the pipeline
     input  logic         i_trap_enter,
@@ -236,11 +238,11 @@ module tdrv32_rvfi_shadow #(
                 end
             end
 
-            if (!i_pipeline_stall) begin
+            if (!i_pipeline_stall)
                 rvfi_mem_valid_shadow <= i_ex_valid && !i_trap_enter;
-                rvfi_wb_valid_shadow  <= rvfi_mem_valid_shadow &&
-                                         !i_data_access_exception;
-            end
+
+            if (i_mem_wb_advance)
+                rvfi_wb_valid_shadow <= i_mem_wb_fire;
         end
     end
 
@@ -256,7 +258,9 @@ module tdrv32_rvfi_shadow #(
             rvfi_mem_rs2_rdata <= i_ex_rs2_read
                                 ? i_ex_rs2_data_forwarded : '0;
             rvfi_mem_pc_wdata  <= rvfi_ex_pc_wdata;
+        end
 
+        if (i_mem_wb_advance) begin
             rvfi_wb_rs1_addr   <= rvfi_mem_rs1_addr;
             rvfi_wb_rs2_addr   <= rvfi_mem_rs2_addr;
             rvfi_wb_rs1_rdata  <= rvfi_mem_rs1_rdata;

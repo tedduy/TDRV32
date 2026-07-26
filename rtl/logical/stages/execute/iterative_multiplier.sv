@@ -24,6 +24,7 @@ module iterative_multiplier #(
   typedef enum logic [1:0] {
     MUL_IDLE,
     MUL_RUN,
+    MUL_CORRECT,
     MUL_DONE
   } mul_state_t;
 
@@ -37,7 +38,7 @@ module iterative_multiplier #(
   logic [N-1:0] operand_a_magnitude, operand_b_magnitude;
   logic [N:0] upper_sum;
   logic [(2*N)-1:0] magnitude_product_next;
-  logic [(2*N)-1:0] corrected_product_next;
+  logic [N-1:0] corrected_high_next;
   logic final_iteration;
 
   assign operand_a_signed = ((i_alu_ctrl == ALU_MULH) ||
@@ -58,17 +59,27 @@ module iterative_multiplier #(
   assign upper_sum = {1'b0, product_q[(2*N)-1:N]} +
                      (product_q[0] ? {1'b0, multiplicand_q} : '0);
   assign magnitude_product_next = {upper_sum, product_q[N-1:1]};
-  assign corrected_product_next = negate_result_q
-                                ? (~magnitude_product_next + 1'b1)
-                                : magnitude_product_next;
+  // Signed multiply operations only consume the high word. For a 2*N-bit
+  // two's complement, the increment reaches the high word exactly when the
+  // low magnitude word is zero. Computing that condition directly avoids a
+  // 2*N-bit carry chain.
+  assign corrected_high_next = ~product_q[(2*N)-1:N] +
+                               (product_q[N-1:0] == '0);
   assign final_iteration = (state_q == MUL_RUN) &&
                            (iteration_q == LAST_ITERATION);
 
   assign o_busy = (state_q != MUL_IDLE);
-  assign o_done = (state_q == MUL_DONE) || final_iteration;
+  // A negative result is converted from magnitude in a separate cycle. This
+  // keeps the N+1-bit iteration adder and 2*N-bit two's-complement incrementer
+  // off the same timing path.
+  assign o_done = (state_q == MUL_DONE) ||
+                  (state_q == MUL_CORRECT) ||
+                  (final_iteration && !negate_result_q);
   assign o_result = final_iteration
-                  ? (select_high_q ? corrected_product_next[(2*N)-1:N]
-                                   : corrected_product_next[N-1:0])
+                  ? (select_high_q ? magnitude_product_next[(2*N)-1:N]
+                                   : magnitude_product_next[N-1:0])
+                  : (state_q == MUL_CORRECT)
+                  ? corrected_high_next
                   : (select_high_q ? product_q[(2*N)-1:N]
                                    : product_q[N-1:0]);
 
@@ -84,11 +95,20 @@ module iterative_multiplier #(
 
         MUL_RUN: begin
           if (final_iteration) begin
-            if (i_consume)
+            if (negate_result_q)
+              state_q <= MUL_CORRECT;
+            else if (i_consume)
               state_q <= MUL_IDLE;
             else
               state_q <= MUL_DONE;
           end
+        end
+
+        MUL_CORRECT: begin
+          if (i_consume)
+            state_q <= MUL_IDLE;
+          else
+            state_q <= MUL_DONE;
         end
 
         MUL_DONE: begin
@@ -120,12 +140,13 @@ module iterative_multiplier #(
       end
 
       MUL_RUN: begin
-        if (final_iteration)
-          product_q <= corrected_product_next;
-        else begin
-          product_q   <= magnitude_product_next;
+        product_q <= magnitude_product_next;
+        if (!final_iteration)
           iteration_q <= iteration_q + 1'b1;
-        end
+      end
+
+      MUL_CORRECT: begin
+        product_q[(2*N)-1:N] <= corrected_high_next;
       end
 
       default: begin end

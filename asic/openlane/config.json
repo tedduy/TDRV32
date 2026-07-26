@@ -40,7 +40,9 @@
     "dir::../../rtl/logical/tdrv32_asic_wrapper.sv"
   ],
   "CLOCK_PORT": "i_clk",
-  "CLOCK_PERIOD": 25,
+  "CLOCK_PERIOD": 30,
+  "SYNTH_STRATEGY": "DELAY 0",
+  "SYNTH_SIZING": true,
   "PNR_SDC_FILE": "dir::tdrv32_core.sdc",
   "SIGNOFF_SDC_FILE": "dir::tdrv32_core.sdc",
   "FP_SIZING": "relative",
@@ -49,7 +51,7 @@
   "PL_TARGET_DENSITY_PCT": 30,
   "pdk::sky130A": {
     "scl::sky130_fd_sc_hd": {
-      "CLOCK_PERIOD": 25
+      "CLOCK_PERIOD": 30
     }
   }
 }

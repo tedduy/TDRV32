@@ -38,7 +38,12 @@ async def all_signed_modes_and_done_hold(dut):
             if int(dut.o_done.value):
                 break
         assert int(dut.o_done.value)
-        assert int(dut.o_result.value) == expected
+        actual = int(dut.o_result.value)
+        assert actual == expected, (
+            f"control=0x{control:x} a=0x{operand_a:08x} "
+            f"b=0x{operand_b:08x}: expected 0x{expected:08x}, "
+            f"got 0x{actual:08x}"
+        )
         await RisingEdge(dut.i_clk)  # enter and remain in DONE
         assert int(dut.o_done.value)
         assert int(dut.o_result.value) == expected

@@ -12,6 +12,12 @@ module id_ex_register #(
     input  logic             i_arst_n,
     input  logic             i_stall,      // Hold state during any global stall
     input  logic             i_flush,      // Flush signal for branch/jump
+
+    // WB repair port. An elastic WB stage may retire while this packet is
+    // stalled, so refresh any captured source operand that it produces.
+    input  logic             i_wb_write,
+    input  logic [4:0]       i_wb_addr,
+    input  logic [N-1:0]     i_wb_data,
     
     // Inputs from ID stage
     input  logic             i_valid,
@@ -192,7 +198,12 @@ module id_ex_register #(
     // Capturing them during a flush is harmless because o_valid and every
     // side-effect control are cleared on that same edge.
     always_ff @(posedge i_clk) begin
-        if (!i_stall) begin
+        if (i_stall) begin
+            if (i_wb_write && o_rs1_read && (o_rs1_addr == i_wb_addr))
+                o_rs1_data <= i_wb_data;
+            if (i_wb_write && o_rs2_read && (o_rs2_addr == i_wb_addr))
+                o_rs2_data <= i_wb_data;
+        end else begin
             o_pc          <= i_pc;
             o_instruction <= i_instruction;
             o_raw_instruction <= i_raw_instruction;
